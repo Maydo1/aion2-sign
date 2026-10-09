@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>永恒之塔2 公会签到</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- Supabase JS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        game: {
+                            dark: '#121826',
+                            main: '#3b4fd9',
+                            accent: '#f5b041',
+                            card: '#1e293b',
+                        }
+                    },
+                    fontFamily: {
+                        game: ['Microsoft YaHei', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .bg-game-gradient {
+                background: linear-gradient(135deg, #121826 0%, #202c48 100%);
+            }
+            .text-shadow {
+                text-shadow: 0 0 8px #3b4fd988;
+            }
+        }
+    </style>
+</head>
+<body class="bg-game-gradient min-h-screen font-game text-gray-100 p-4 md:p-8">
+    <div class="max-w-2xl mx-auto">
+        <!-- 标题 -->
+        <div class="text-center mb-8">
+            <h1 class="text-[clamp(1.8rem,4vw,2.5rem)] font-bold text-game-accent text-shadow">
+                <i class="fa fa-calendar-check-o mr-2"></i>永恒之塔2 公会签到
+            </h1>
+            <p class="text-gray-400 mt-2">云端同步 · 全员共享签到名单</p>
+        </div>
+
+        <!-- 签到卡片 -->
+        <div class="bg-game-card rounded-xl p-6 shadow-lg border border-game-main/30 mb-6">
+            <div class="flex gap-3">
+                <input id="username" type="text" placeholder="输入游戏角色名"
+                    class="flex-1 px-4 py-3 rounded-lg bg-gray-800 border border-gray-600 focus:border-game-main focus:outline-none">
+                <button onclick="doSign()"
+                    class="px-5 py-3 bg-game-main hover:bg-blue-600 rounded-lg transition-all font-bold">
+                    签到
+                </button>
+            </div>
+            <div id="msg" class="mt-4 h-6 text-center"></div>
+        </div>
+
+        <!-- 统计 -->
+        <div class="bg-game-card rounded-xl p-6 shadow-lg border border-game-main/30 mb-6">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-semibold"><i class="fa fa-users mr-2"></i>今日签到名单</h2>
+                <span id="count" class="text-game-accent text-lg">0人</span>
+            </div>
+            <div id="list" class="mt-4 grid gap-2 max-h-[400px] overflow-y-auto"></div>
+        </div>
+
+        <!-- 管理员操作 -->
+        <div class="text-center">
+            <button onclick="clearToday()" class="text-red-400 hover:text-red-300 text-sm">
+                清空今日签到（管理员）
+            </button>
+        </div>
+    </div>
+
+<script>
+    // ========== 替换这里为你的Supabase信息 ==========
+    const SUPABASE_URL = "sb_publishable_G0mqEEyAkX0p2Aad3sRtFw_yJV65zVe";
+    const SUPABASE_ANON_KEY = "sb_secret_YEMopu4iT7pt01z16-fbAQ_yx6Tj3bX";
+    // ==============================================
+
+    const { createClient } = supabase;
+    const _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    function getTodayStr(){
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+
+    // 加载今日签到列表
+    async function render(){
+        const today = getTodayStr();
+        const {data, error} = await _supabase
+            .from('sign_record')
+            .select('role_name, sign_time')
+            .eq('sign_date', today)
+            .order('sign_time', {ascending:true});
+        
+        if(error){
+            showMsg("读取签到列表失败", false);
+            return;
+        }
+        document.getElementById('count').innerText = `${data.length}人`;
+        const listDom = document.getElementById('list');
+        if(data.length ===0){
+            listDom.innerHTML = '<div class="text-gray-500 text-center py-4">暂无签到成员</div>';
+            return;
+        }
+        listDom.innerHTML = data.map(u=>{
+            const t = new Date(u.sign_time);
+            const timeStr = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+            return `
+            <div class="bg-gray-800/60 rounded px-3 py-2 flex justify-between">
+                <span>${u.role_name}</span>
+                <span class="text-gray-400 text-sm">${timeStr}</span>
+            </div>`;
+        }).join('');
+    }
+
+    function showMsg(text, isOk=true){
+        const dom = document.getElementById('msg');
+        dom.innerText = text;
+        dom.className = isOk ? 'mt-4 h-6 text-center text-green-400' : 'mt-4 h-6 text-center text-red-400';
+        setTimeout(()=>dom.innerText='',2500);
+    }
+
+    // 签到提交
+    async function doSign(){
+        const name = document.getElementById('username').value.trim();
+        if(!name) return showMsg('请输入角色名', false);
+        const today = getTodayStr();
+
+        // 判断今天是否已经签到
+        const {data:exist} = await _supabase
+            .from('sign_record')
+            .select('id')
+            .eq('sign_date', today)
+            .eq('role_name', name);
+        
+        if(exist.length>0){
+            return showMsg('该角色今日已签到！', false);
+        }
+
+        const now = new Date();
+        const {error} = await _supabase.from('sign_record').insert([{
+            role_name: name,
+            sign_time: now.toISOString(),
+            sign_date: today
+        }]);
+        if(error){
+            showMsg("签到失败", false);
+            return;
+        }
+        showMsg(`✅ ${name} 签到成功！`);
+        document.getElementById('username').value = '';
+        render();
+    }
+
+    // 清空今日签到
+    async function clearToday(){
+        if(!confirm('确定清空今日全部签到记录？')) return;
+        const today = getTodayStr();
+        const {error} = await _supabase
+            .from('sign_record')
+            .delete()
+            .eq('sign_date', today);
+        if(error){
+            showMsg("清空失败", false);
+            return;
+        }
+        showMsg('已清空今日签到列表');
+        render();
+    }
+
+    window.onload = render;
+</script>
+</body>
+</html>
