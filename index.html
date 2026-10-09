@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>永恒之塔2 公会签到</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Excel导出库 SheetJS -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        game: {
+                            dark: '#0f1420',
+                            main: '#4359e8',
+                            accent: '#ffc448',
+                            card: '#182238',
+                        }
+                    },
+                    fontFamily: {
+                        game: ['Microsoft YaHei', 'sans-serif']
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .bg-game-gradient {
+                background: linear-gradient(145deg, #0b101b 0%, #17223b 100%);
+            }
+            .text-glow {
+                text-shadow: 0 0 10px #ffc44899, 0 0 20px #4359e866;
+            }
+            .card-glow {
+                box-shadow: 0 0 14px #4359e833;
+            }
+            .card-hover {
+                transition: all 0.3s ease;
+            }
+            .card-hover:hover {
+                box-shadow: 0 0 22px #4359e855;
+                transform: translateY(-2px);
+            }
+            .btn-glow:hover {
+                box-shadow: 0 0 12px #4359e877;
+            }
+        }
+    </style>
+</head>
+<body class="bg-game-gradient min-h-screen font-game text-gray-100 p-4 md:p-8">
+    <div class="max-w-3xl mx-auto">
+        <!-- 标题区域 -->
+        <div class="text-center mb-10">
+            <h1 class="text-[clamp(2rem,5vw,3rem)] font-bold text-game-accent text-glow">
+                <i class="fa fa-calendar-check-o mr-3"></i>永恒之塔2 公会签到
+            </h1>
+            <p class="text-gray-400 mt-3 text-lg">✨ 云端同步 · 支持多次打卡签到</p>
+        </div>
+
+        <!-- 签到卡片 -->
+        <div class="bg-game-card rounded-2xl p-6 md:p-8 card-glow card-hover border border-game-main/30 mb-8">
+            <div class="flex flex-col md:flex-row gap-4">
+                <input id="username" type="text" placeholder="输入游戏角色名"
+                    class="flex-1 px-5 py-4 rounded-xl bg-gray-800/70 border border-gray-600 focus:border-game-main focus:outline-none text-lg transition-all">
+                <button onclick="doSign()"
+                    class="px-8 py-4 bg-game-main hover:bg-blue-500 rounded-xl transition-all font-bold text-lg btn-glow">
+                    📝 签到打卡
+                </button>
+            </div>
+            <div id="msg" class="mt-5 h-7 text-center text-lg"></div>
+        </div>
+
+        <!-- 签到名单 -->
+        <div class="bg-game-card rounded-2xl p-6 md:p-8 card-glow card-hover border border-game-main/30 mb-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-semibold"><i class="fa fa-users mr-2 text-game-accent"></i>今日签到记录</h2>
+                <span id="count" class="text-game-accent text-xl">0条记录</span>
+            </div>
+            <div id="list" class="mt-4 grid gap-3 max-h-[450px] overflow-y-auto pr-2">
+            </div>
+        </div>
+
+        <!-- 管理员区域 -->
+        <div class="bg-game-card rounded-2xl p-6 md:p-8 card-glow card-hover border border-red-500/30 mb-8">
+            <h3 class="text-xl mb-4 text-red-300"><i class="fa fa-lock mr-2"></i>管理员操作面板</h3>
+            <div class="flex flex-col md:flex-row gap-4 mb-5">
+                <input id="adminPwd" type="password" placeholder="输入管理员密码"
+                    class="flex-1 px-5 py-4 rounded-xl bg-gray-800/70 border border-gray-600 focus:border-red-400 focus:outline-none text-lg">
+                <button onclick="adminAuth()" class="px-6 py-4 bg-red-600 hover:bg-red-500 rounded-xl transition-all font-bold">
+                    🔐 验证管理员
+                </button>
+            </div>
+            <div id="adminPanel" class="hidden">
+                <div class="flex flex-col md:flex-row gap-4">
+                    <button onclick="exportExcel()" class="px-6 py-4 bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-all font-bold flex-1 btn-glow">
+                        📥 导出今日Excel签到表
+                    </button>
+                    <button onclick="clearToday()" class="px-6 py-4 bg-red-600 hover:bg-red-500 rounded-xl transition-all font-bold flex-1">
+                        🗑️ 清空今日全部签到
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 排班表图片区域（在这里放你的排班图片） -->
+        <div class="bg-game-card rounded-2xl p-6 md:p-8 card-glow card-hover border border-game-main/30">
+            <h3 class="text-xl mb-4 text-game-accent"><i class="fa fa-calendar mr-2"></i>公会活动排班表</h3>
+            <div class="w-full">
+                <img id="scheduleImg" src="https://xiangce-1251040110.file.myqcloud.com/images/81/agressor/2026/10/fnKNXKAjZj2z5XJpJ5JDqYiQjxZyXd.png" alt="永恒之塔2排班表" class="w-full rounded-xl">
+            </div>
+        </div>
+    </div>
+
+<script>
+    // ===================== 配置区（自行修改） =====================
+    const SUPABASE_URL = "sb_publishable_G0mqEEyAkX0p2Aad3sRtFw_yJV65zVe";
+    const SUPABASE_ANON_KEY = "sb_secret_pvEmVyl4gc0mqs26DasLsg_CJip97qn";
+    const ADMIN_PASSWORD = "lixingqi597"; // 修改管理员密码
+    // =============================================================
+
+    const { createClient } = supabase;
+    const _supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let adminVerified = false;
+
+    function getTodayStr(){
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    }
+
+    // 加载签到列表
+    async function render(){
+        const today = getTodayStr();
+        const {data, error} = await _supabase
+            .from('sign_record')
+            .select('role_name, sign_time')
+            .eq('sign_date', today)
+            .order('sign_time', {ascending:true});
+        
+        if(error){
+            showMsg("读取签到列表失败", false);
+            return;
+        }
+        document.getElementById('count').innerText = `${data.length}条记录`;
+        const listDom = document.getElementById('list');
+        if(data.length ===0){
+            listDom.innerHTML = '<div class="text-gray-500 text-center py-6 text-lg">暂无签到记录</div>';
+            return;
+        }
+        listDom.innerHTML = data.map(u=>{
+            const t = new Date(u.sign_time);
+            const timeStr = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+            return `
+            <div class="bg-gray-800/60 rounded-xl px-4 py-3 flex justify-between items-center">
+                <span class="text-lg">${u.role_name}</span>
+                <span class="text-gray-400">${timeStr}</span>
+            </div>`;
+        }).join('');
+    }
+
+    function showMsg(text, isOk=true){
+        const dom = document.getElementById('msg');
+        dom.innerText = text;
+        dom.className = isOk ? 'mt-5 h-7 text-center text-lg text-green-400' : 'mt-5 h-7 text-center text-lg text-red-400';
+        setTimeout(()=>dom.innerText='',3000);
+    }
+
+    // 签到提交【已移除重复签到判断，可以反复签到】
+    async function doSign(){
+        const name = document.getElementById('username').value.trim();
+        if(!name) return showMsg('请输入角色名称！', false);
+        const today = getTodayStr();
+
+        const now = new Date();
+        const {error} = await _supabase.from('sign_record').insert([{
+            role_name: name,
+            sign_time: now.toISOString(),
+            sign_date: today
+        }]);
+        if(error){
+            showMsg("签到失败，请重试", false);
+            return;
+        }
+        showMsg(`✅ ${name} 签到成功！`);
+        document.getElementById('username').value = '';
+        render();
+    }
+
+    // 管理员密码验证
+    function adminAuth(){
+        const inputPwd = document.getElementById('adminPwd').value.trim();
+        if(inputPwd === ADMIN_PASSWORD){
+            adminVerified = true;
+            document.getElementById('adminPanel').classList.remove('hidden');
+            showMsg("管理员验证成功！", true);
+        }else{
+            adminVerified = false;
+            document.getElementById('adminPanel').classList.add('hidden');
+            showMsg("密码错误！", false);
+        }
+    }
+
+    // 导出Excel
+    async function exportExcel(){
+        if(!adminVerified){
+            showMsg("请先验证管理员密码", false);
+            return;
+        }
+        const today = getTodayStr();
+        const {data, error} = await _supabase
+            .from('sign_record')
+            .select('role_name, sign_time')
+            .eq('sign_date', today)
+            .order('sign_time', {ascending:true});
+        if(error || data.length ===0){
+            showMsg("暂无签到数据可导出", false);
+            return;
+        }
+        const exportData = data.map(item=>{
+            const t = new Date(item.sign_time);
+            return {
+                "角色名": item.role_name,
+                "签到时间": t.toLocaleString()
+            }
+        })
+        const ws = XLSX.utils.json_to_sheet(exportData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, today+"签到记录");
+        XLSX.writeFile(wb, `永恒之塔2_${today}_签到记录.xlsx`);
+        showMsg("✅ Excel文件已下载",true);
+    }
+
+    // 清空今日签到
+    async function clearToday(){
+        if(!adminVerified){
+            showMsg("请先验证管理员密码", false);
+            return;
+        }
+        if(!confirm('⚠️ 确定清空今日全部签到记录？删除后不可恢复！')) return;
+        const today = getTodayStr();
+        const {error} = await _supabase
+            .from('sign_record')
+            .delete()
+            .eq('sign_date', today);
+        if(error){
+            showMsg("清空失败", false);
+            return;
+        }
+        showMsg('✅ 已清空今日签到记录');
+        render();
+    }
+
+    window.onload = render;
+</script>
+</body>
+</html>
